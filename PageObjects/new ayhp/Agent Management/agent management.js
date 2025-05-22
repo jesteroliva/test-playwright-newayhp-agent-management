@@ -29,53 +29,99 @@ class agentManagement {
       //  await expect(this.page.getByRole('link', { name: ' Dashboard' })).toBeVisible();
         await this.page.waitForTimeout(5000); 
     }
-
     async functionalityChecks() {
         console.log('🔍 Initiating sorting verification...');
         await this.page.getByRole('button', { name: 'Search' }).click();
-    
-        const columnsToSort = [
-            { name: 'AGENT ID: activate to sort column ascending', exact: false },
-            { name: 'AGENCY: activate to sort column ascending', exact: true },
-            { name: 'FIRST NAME: activate to sort column ascending', exact: true },
-            { name: 'MIDDLE NAME: activate to sort column ascending', exact: true },
-            { name: 'LAST NAME: activate to sort column ascending', exact: true },
-            { name: 'STATE: activate to sort column ascending', exact: true },
-            { name: 'ORIG. AGENCY: activate to sort column ascending', exact: false },
-            { name: 'BUSINESS FROM: activate to sort column ascending', exact: false },
-            { name: 'BUSINESS TYPE: activate to sort column ascending', exact: false },
-            { name: 'STATUS: activate to sort column ascending', exact: true },
-            { name: 'COMPANY: activate to sort column ascending', exact: true }
+      
+        const columnBaseNames = [
+          'AGENT ID',
+          'AGENCY',
+          'FIRST NAME',
+          'MIDDLE NAME',
+          'LAST NAME',
+          'STATE',
+          'ORIG. AGENCY',
+          'BUSINESS FROM',
+          'BUSINESS TYPE',
+          'STATUS',
+          'COMPANY'
         ];
-    
-        for (const column of columnsToSort) {
-            try {
-                console.log(`🔍 Checking sorting for column: ${column.name}`);
-    
-                const columnExists = await this.page.$(`th[aria-label="${column.name}"]`);
-                if (!columnExists) {
-                    console.error(`❌ Column ${column.name} not found.`);
-                    continue; // Skip to next column
-                }
-    
-                await this.page.waitForSelector(`th[aria-label="${column.name}"]`, { state: 'visible' });
-                await this.page.waitForLoadState('domcontentloaded');
-    
-                const isSorted = await Promise.race([
-                    this.sorter.checkSorting(column.name, column.exact),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('Sorting check timeout')), 5000))
-                ]);
-    
-                if (!isSorted) {
-                    console.error(`❌ Sorting failed for ${column.name}`);
-                } else {
-                    console.log(`✅ Sorting verified for ${column.name}`);
-                }
-            } catch (error) {
-                console.error(`❌ Error checking sorting for ${column.name}: ${error.message}`);
-            }
+      
+        // Helper inside this method for simplicity
+        function isValidDate(value) {
+          return !isNaN(Date.parse(value));
         }
-    }
+      
+        function compareDates(a, b) {
+          return new Date(a) - new Date(b);
+        }
+      
+        for (const baseName of columnBaseNames) {
+          try {
+            console.log(`\n🔍 Checking sorting for column: ${baseName}`);
+      
+            const headerLocator = this.page.locator('th[aria-label]').filter({ hasText: baseName });
+            const count = await headerLocator.count();
+            if (count === 0) {
+              console.warn(`⚠ Column header not found for: ${baseName}`);
+              continue;
+            }
+      
+            const columnIndex = await headerLocator.first().evaluate(el =>
+              Array.from(el.parentElement.children).indexOf(el)
+            );
+      
+            for (let clickNum = 1; clickNum <= 2; clickNum++) {
+              console.log(`➡️ Clicking header "${baseName}" for sort #${clickNum}`);
+              await headerLocator.first().click();
+              await this.page.waitForTimeout(1500);
+      
+              const columnCells = this.page.locator(`#agents-table tbody tr td:nth-child(${columnIndex + 1})`);
+              await columnCells.first().waitFor({ state: 'visible' });
+      
+              const values = await columnCells.evaluateAll(nodes =>
+                nodes.map(node => {
+                  const input = node.querySelector('input');
+                  return input ? input.value.trim() : node.textContent.trim();
+                })
+              );
+      
+              console.log(`📋 Values after click #${clickNum} on "${baseName}":`, values.join(' | '));
+      
+              // SORTING VALIDATION
+              const isDateColumn = values.every(isValidDate);
+              let sortedAsc;
+              if (isDateColumn) {
+                sortedAsc = [...values].sort(compareDates);
+              } else {
+                sortedAsc = [...values].sort((a, b) =>
+                  a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+                );
+              }
+      
+              let sortedDesc = [...sortedAsc].reverse();
+      
+              if (clickNum === 1) { // first click: expect ascending
+                if (JSON.stringify(values) === JSON.stringify(sortedAsc)) {
+                  console.log(`✅ "${baseName}" is correctly sorted ASCENDING after click #1`);
+                } else {
+                  console.error(`❌ "${baseName}" sorting ASCENDING failed!`);
+                }
+              } else if (clickNum === 2) { // second click: expect descending
+                if (JSON.stringify(values) === JSON.stringify(sortedDesc)) {
+                  console.log(`✅ "${baseName}" is correctly sorted DESCENDING after click #2`);
+                } else {
+                  console.error(`❌ "${baseName}" sorting DESCENDING failed!`);
+                }
+              }
+            }
+          } catch (err) {
+            console.error(`❌ Error checking sorting for column "${baseName}":`, err);
+          }
+        }
+      }
+      
+
     
     
     
